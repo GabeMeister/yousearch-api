@@ -2,18 +2,9 @@
 name = "yousearch-api"
 version = "0.1.0"
 edition = "2021"
-publish = false
-
-[lib]
-name = "yousearch_lib"
-path = "src/lib.rs"
-
-[[bin]]
-name = "yousearch_bin"
-path = "src/main.rs"
 
 [dependencies]
-shuttle-service = { version = "0.11.0", features = ["web-rocket"] }
 rocket = "0.5.0-rc.2"
-tokio = "1.21.0"
-futures = "0.3"
+shuttle-rocket = { version = "0.12.0" }
+shuttle-runtime = { version = "0.12.0" }
+tokio = { version = "1.26.0" }

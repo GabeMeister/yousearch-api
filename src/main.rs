@@ -1,6 +1,14 @@
-mod api;
+#[macro_use]
+extern crate rocket;
 
-#[rocket::main]
-async fn main() {
-    let _ = api::build_api().launch().await;
+#[get("/")]
+fn index() -> &'static str {
+    "Hello, human...."
+}
+
+#[shuttle_runtime::main]
+async fn rocket() -> shuttle_rocket::ShuttleRocket {
+    let rocket = rocket::build().mount("/hello", routes![index]);
+
+    Ok(rocket.into())
 }
