@@ -6,6 +6,7 @@ use rocket::serde::json::Json;
 use rocket::{response::status::BadRequest, State};
 use serde::{Deserialize, Serialize};
 use shuttle_runtime::CustomError;
+use shuttle_secrets::SecretStore;
 use sqlx::{Executor, FromRow, PgPool};
 
 #[derive(Serialize, FromRow)]
@@ -19,8 +20,14 @@ struct TodoNew {
     pub note: String,
 }
 
-struct MyState {
+struct Secrets {
+    pub db_pass: String,
+    pub gabe: String,
+}
+
+struct YousearchState {
     pool: PgPool,
+    secrets: Secrets,
 }
 
 #[get("/")]
@@ -29,12 +36,19 @@ fn index() -> &'static str {
 }
 
 #[get("/hello")]
-fn hello() -> &'static str {
-    "Hello world!"
+fn hello(state: &State<YousearchState>) -> String {
+    let gabe_var = state.secrets.gabe.clone();
+    dbg!(&gabe_var);
+    dbg!(&state.secrets.db_pass);
+
+    gabe_var
 }
 
 #[get("/todo/<id>")]
-async fn retrieve(id: i32, state: &State<MyState>) -> Result<Json<Todo>, BadRequest<String>> {
+async fn retrieve(
+    id: i32,
+    state: &State<YousearchState>,
+) -> Result<Json<Todo>, BadRequest<String>> {
     let todo: Todo = sqlx::query_as("select * from todos where id = $1")
         .bind(id)
         .fetch_one(&state.pool)
@@ -47,7 +61,7 @@ async fn retrieve(id: i32, state: &State<MyState>) -> Result<Json<Todo>, BadRequ
 #[post("/todo", data = "<data>")]
 async fn add(
     data: Json<TodoNew>,
-    state: &State<MyState>,
+    state: &State<YousearchState>,
 ) -> Result<Json<Todo>, BadRequest<String>> {
     let todo: Todo = sqlx::query_as("insert into todos (note) values ($1) returning id, note")
         .bind(&data.note)
@@ -59,12 +73,21 @@ async fn add(
 }
 
 #[shuttle_runtime::main]
-async fn rocket(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_rocket::ShuttleRocket {
+async fn rocket(
+    #[shuttle_shared_db::Postgres] pool: PgPool,
+    #[shuttle_secrets::Secrets] secret_store: SecretStore,
+) -> shuttle_rocket::ShuttleRocket {
     pool.execute(include_str!("../schema.sql"))
         .await
         .map_err(CustomError::new)?;
 
-    let state = MyState { pool };
+    let state = YousearchState {
+        pool,
+        secrets: Secrets {
+            db_pass: secret_store.get("DB_PASS").unwrap(),
+            gabe: secret_store.get("GABE").unwrap(),
+        },
+    };
 
     let rocket = rocket::build()
         .mount("/", routes![index, hello, add, retrieve])
