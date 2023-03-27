@@ -5,9 +5,8 @@ use cors::CORS;
 use rocket::serde::json::Json;
 use rocket::{response::status::BadRequest, State};
 use serde::{Deserialize, Serialize};
-use shuttle_runtime::CustomError;
 use shuttle_secrets::SecretStore;
-use sqlx::{Executor, FromRow, PgPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Serialize, FromRow)]
 struct Todo {
@@ -74,10 +73,7 @@ async fn add(
 
 #[shuttle_runtime::main]
 async fn rocket(
-    #[shuttle_shared_db::Postgres(
-        local_uri = "postgres://postgres:{secrets.DB_PASS}@localhost:5432/yousearch"
-    )]
-    pool: PgPool,
+    #[shuttle_shared_db::Postgres] pool: PgPool,
     #[shuttle_secrets::Secrets] secret_store: SecretStore,
 ) -> shuttle_rocket::ShuttleRocket {
     let state = YousearchState {
