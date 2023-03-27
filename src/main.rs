@@ -80,10 +80,6 @@ async fn rocket(
     pool: PgPool,
     #[shuttle_secrets::Secrets] secret_store: SecretStore,
 ) -> shuttle_rocket::ShuttleRocket {
-    pool.execute(include_str!("../schema.sql"))
-        .await
-        .map_err(CustomError::new)?;
-
     let state = YousearchState {
         pool,
         secrets: Secrets {
