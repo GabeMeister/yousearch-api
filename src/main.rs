@@ -95,7 +95,7 @@ async fn insert_user(user: Json<NewUser>, state: &State<ApiState>) -> Json<NewUs
     }
 }
 
-#[patch("/user/<id>", data = "<user>")]
+#[post("/user/<id>/update", data = "<user>")]
 async fn update_user(
     id: i32,
     user: Json<UpdateUserBody>,
@@ -113,7 +113,7 @@ async fn update_user(
     }
 }
 
-#[delete("/user/<id>")]
+#[post("/user/<id>/delete")]
 async fn delete_user(id: i32, state: &State<ApiState>) -> Json<SuccessFailResponse> {
     let result = sqlx::query("delete from users where id=$1")
         .bind(id)
