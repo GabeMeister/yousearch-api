@@ -3,3 +3,4 @@
 .vscode/
 Secrets.toml
 Secrets.dev.toml
+.env

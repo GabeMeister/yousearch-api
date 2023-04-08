@@ -1,93 +1,155 @@
 #[macro_use]
 extern crate rocket;
+extern crate dotenv;
+
 mod cors;
+
 use cors::CORS;
+use dotenv::dotenv;
 use rocket::serde::json::Json;
-use rocket::{response::status::BadRequest, State};
-use serde::{Deserialize, Serialize};
-use shuttle_secrets::SecretStore;
-use sqlx::{FromRow, PgPool};
+use rocket::serde::{Deserialize, Serialize};
+use rocket::State;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{Error, FromRow, PgPool};
+use std::env;
 
-#[derive(Serialize, FromRow)]
-struct Todo {
-    pub id: i32,
-    pub note: String,
+#[derive(Debug, FromRow, Serialize)]
+struct User {
+    id: i32,
+    name: String,
+}
+#[derive(Debug, Deserialize)]
+struct NewUser {
+    name: String,
+    password: String,
 }
 
-#[derive(Deserialize)]
-struct TodoNew {
-    pub note: String,
+#[derive(Debug, Deserialize)]
+struct UpdateUserBody {
+    name: String,
 }
 
-struct Secrets {
-    pub db_pass: String,
-    pub gabe: String,
-}
-
-struct YousearchState {
+struct ApiState {
     pool: PgPool,
-    secrets: Secrets,
+}
+
+#[derive(Debug, Serialize)]
+struct SuccessFailResponse {
+    success: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct NewUserIdResponse {
+    id: i32,
 }
 
 #[get("/")]
-fn index() -> &'static str {
-    "It's working!"
+fn index() -> String {
+    let db_url = env::var("RUST_ENV").unwrap();
+
+    format!("It works! {db_url}")
 }
 
-#[get("/hello")]
-fn hello(state: &State<YousearchState>) -> String {
-    let gabe_var = state.secrets.gabe.clone();
-    dbg!(&gabe_var);
-    dbg!(&state.secrets.db_pass);
-
-    gabe_var
-}
-
-#[get("/todo/<id>")]
-async fn retrieve(
-    id: i32,
-    state: &State<YousearchState>,
-) -> Result<Json<Todo>, BadRequest<String>> {
-    let todo: Todo = sqlx::query_as("select * from todos where id = $1")
+#[get("/user/<id>")]
+async fn get_user(id: i32, state: &State<ApiState>) -> Json<Option<User>> {
+    let user = sqlx::query_as::<_, User>("select id, name from users where id=$1")
         .bind(id)
         .fetch_one(&state.pool)
-        .await
-        .map_err(|e| BadRequest(Some(e.to_string())))?;
+        .await;
 
-    Ok(Json(todo))
+    match user {
+        Ok(u) => Json(Some(u)),
+        Err(e) => {
+            dbg!(e);
+            Json(None)
+        }
+    }
 }
 
-#[post("/todo", data = "<data>")]
-async fn add(
-    data: Json<TodoNew>,
-    state: &State<YousearchState>,
-) -> Result<Json<Todo>, BadRequest<String>> {
-    let todo: Todo = sqlx::query_as("insert into todos (note) values ($1) returning id, note")
-        .bind(&data.note)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|e| BadRequest(Some(e.to_string())))?;
+#[get("/user/all")]
+async fn get_all_users(state: &State<ApiState>) -> Json<Vec<User>> {
+    let result = sqlx::query_as::<_, User>("select id, name from users")
+        .fetch_all(&state.pool)
+        .await;
 
-    Ok(Json(todo))
+    match result {
+        Ok(all_users) => Json(all_users),
+        Err(_) => Json(Vec::<User>::new()),
+    }
 }
 
-#[shuttle_runtime::main]
-async fn rocket(
-    #[shuttle_shared_db::Postgres] pool: PgPool,
-    #[shuttle_secrets::Secrets] secret_store: SecretStore,
-) -> shuttle_rocket::ShuttleRocket {
-    let state = YousearchState {
-        pool,
-        secrets: Secrets {
-            db_pass: secret_store.get("DB_PASS").unwrap(),
-            gabe: secret_store.get("GABE").unwrap(),
-        },
-    };
+#[post("/user", data = "<user>")]
+async fn insert_user(user: Json<NewUser>, state: &State<ApiState>) -> Json<NewUserIdResponse> {
+    dbg!(user.name.clone());
 
-    let rocket = rocket::build()
-        .mount("/", routes![index, hello, add, retrieve])
-        .manage(state)
-        .attach(CORS);
+    let result: Result<i32, Error> =
+        sqlx::query_scalar("insert into users (name, password) values ($1, $2) returning id")
+            .bind(user.name.clone())
+            .bind(user.password.clone())
+            .fetch_one(&state.pool)
+            .await;
 
-    Ok(rocket.into())
+    match result {
+        Ok(id) => Json(NewUserIdResponse { id }),
+        Err(_) => Json(NewUserIdResponse { id: -1 }),
+    }
+}
+
+#[patch("/user/<id>", data = "<user>")]
+async fn update_user(
+    id: i32,
+    user: Json<UpdateUserBody>,
+    state: &State<ApiState>,
+) -> Json<SuccessFailResponse> {
+    let result = sqlx::query("update users set name=$1 where id=$2")
+        .bind(user.name.clone())
+        .bind(id)
+        .execute(&state.pool)
+        .await;
+
+    match result {
+        Ok(_) => Json(SuccessFailResponse { success: true }),
+        Err(_) => Json(SuccessFailResponse { success: false }),
+    }
+}
+
+#[delete("/user/<id>")]
+async fn delete_user(id: i32, state: &State<ApiState>) -> Json<SuccessFailResponse> {
+    let result = sqlx::query("delete from users where id=$1")
+        .bind(id)
+        .execute(&state.pool)
+        .await;
+
+    match result {
+        Ok(_) => Json(SuccessFailResponse { success: true }),
+        Err(_) => Json(SuccessFailResponse { success: false }),
+    }
+}
+
+#[launch]
+async fn rocket() -> _ {
+    dotenv().ok();
+
+    let db_url = env::var("DATABASE_URL").unwrap();
+
+    let pool = PgPoolOptions::new()
+        .max_connections(100)
+        .connect(&db_url)
+        .await
+        .expect("Unable to connect to Postgres");
+
+    rocket::build()
+        .manage(ApiState { pool })
+        .attach(CORS)
+        .mount(
+            "/",
+            routes![
+                index,
+                get_user,
+                get_all_users,
+                insert_user,
+                update_user,
+                delete_user
+            ],
+        )
 }

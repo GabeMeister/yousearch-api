@@ -1,13 +1,7 @@
 #!/bin/bash
 
 if [ "$1" = "dev" ]; then
-  cargo watch -x "shuttle run" -i Cargo.lock
-elif [ "$1" = "local-db" ]; then
-  docker run --rm -it --name postgres -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=yousearch postgres:14-alpine
-elif [ "$1" = "psql-local" ]; then
-  psql -h localhost -p 5432 -U postgres yousearch
-elif [ "$1" = "psql-live" ]; then
-  psql -h db.shuttle.rs -p 5432 -U user-gabemeister-yousearch db-gabemeister-yousearch
+  cargo watch -c -x "run"
 else
   echo "Usage: $0 [dev]"
 fi

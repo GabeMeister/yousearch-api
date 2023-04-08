@@ -4,11 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rocket = { version = "0.5.0-rc.2", features = ["json"] }
-serde = "1.0.148"
-shuttle-rocket = { version = "0.12.0" }
-shuttle-runtime = { version = "0.12.0" }
-tokio = { version = "1.26.0" }
-shuttle-shared-db = { version = "0.12.0", features = ["postgres"] }
-sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres"] }
-shuttle-secrets = "0.12.0"
+rocket = { version = "=0.5.0-rc.3", features = ["json"]}
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.6", features = [ "runtime-tokio-rustls", "postgres", "macros" ] }
+dotenv = "0.15.0"
+serde = { version = "1.0", features = ["derive"] }
