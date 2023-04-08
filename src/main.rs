@@ -44,10 +44,10 @@ struct NewUserIdResponse {
 }
 
 #[get("/")]
-fn index() -> String {
-    let db_url = env::var("RUST_ENV").unwrap();
-
-    format!("It works! {db_url}")
+fn index() -> Json<SuccessFailResponse> {
+    Json(SuccessFailResponse {
+        success: true,
+    })
 }
 
 #[get("/user/<id>")]
