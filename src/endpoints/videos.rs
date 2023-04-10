@@ -92,6 +92,43 @@ pub struct CreateVideoResponse {
     pub id: i32,
 }
 
+// title | url | thumbnail | youtube_id
+// items[0].snippet.title
+// https://youtube.com/channel/<youtube_id>
+// items[0].snippet.thumbnails.default
+// <youtube_id>
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct YouTubeChannelResponse {
+    items: Vec<YouTubeChannelItem>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct YouTubeChannelItem {
+    id: String,
+    snippet: YouTubeChannelSnippet,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct YouTubeChannelSnippet {
+    title: String,
+    thumbnails: YouTubeChannelThumbnailTypes,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct YouTubeChannelThumbnailTypes {
+    default: YouTubeChannelThumbnail,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct YouTubeChannelThumbnail {
+    url: String,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+struct RowId {
+    id: i32,
+}
+
 #[post("/video", data = "<video_url>")]
 pub async fn create_video(
     video_url: Json<NewVideoUrl>,
@@ -118,8 +155,6 @@ pub async fn create_video(
         video_id = temp;
     }
 
-    dbg!(&video_id);
-
     let youtube_api_url = format!("https://www.googleapis.com/youtube/v3/videos?key=AIzaSyAJER_goEuZNztE5XRitR-roJfHvSsUO9Q&part=id,snippet,statistics,contentDetails&id={video_id}");
     let video = reqwest::get(youtube_api_url)
         .await
@@ -129,12 +164,47 @@ pub async fn create_video(
         .unwrap();
 
     let video_to_insert: YouTubeVideoItem = video.items[0].clone();
+    let channel_youtube_id = video_to_insert.snippet.channel_id.clone();
+
+    // Check channels table if channel id already exists
+    let row = sqlx::query_as::<_, RowId>("select id from channels where youtube_id=$1")
+        .bind(&channel_youtube_id)
+        .fetch_one(&state.pool)
+        .await;
+
+    let mut channel_id: i32 = -1;
+
+    if let Err(_) = row {
+        // Fetch the channel details, and insert them into the channels table
+        let youtube_api_channel_url = format!("https://www.googleapis.com/youtube/v3/channels?key=AIzaSyAJER_goEuZNztE5XRitR-roJfHvSsUO9Q&part=id,snippet,statistics,contentDetails&id={channel_youtube_id}");
+        let channel = reqwest::get(&youtube_api_channel_url)
+            .await
+            .unwrap()
+            .json::<YouTubeChannelResponse>()
+            .await
+            .unwrap();
+
+        dbg!(&channel);
+        let channel_to_insert = channel.items[0].clone();
+
+        let result: Result<i32, Error> =
+        sqlx::query_scalar("insert into channels (title, url, thumbnail, youtube_id) values ($1, $2, $3, $4) returning id")
+            .bind(channel_to_insert.snippet.title)
+            .bind(format!("https://youtube.com/channel/{}", channel_to_insert.id))
+            .bind(channel_to_insert.snippet.thumbnails.default.url)
+            .bind(channel_to_insert.id)
+            .fetch_one(&state.pool)
+            .await;
+
+        channel_id = result.unwrap();
+    } else if let Ok(r) = row {
+        channel_id = r.id;
+    }
 
     let result: Result<i32, Error> =
         sqlx::query_scalar("insert into videos (channel_id, title, url, upload_datetime, views, length, thumbnail) values ($1, $2, $3, $4, $5, $6, $7) returning id")
-            .bind(1)
-            // .bind(video_to_insert.snippet.channel_id)
-            .bind(video_to_insert.snippet.channel_title)
+            .bind(channel_id)
+            .bind(video_to_insert.snippet.title)
             .bind(video_url.url.clone())
             // .bind(video_to_insert.snippet.published_at)
             .bind(Utc::now())
