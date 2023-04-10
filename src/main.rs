@@ -30,11 +30,15 @@ async fn rocket() -> _ {
             "/",
             routes![
                 endpoints::general::index,
+
                 endpoints::users::get_all_users,
                 endpoints::users::get_user,
                 endpoints::users::insert_user,
                 endpoints::users::update_user,
-                endpoints::users::delete_user
+                endpoints::users::delete_user,
+                
+                endpoints::videos::get_videos,
+                endpoints::videos::create_video,
             ],
         )
 }
