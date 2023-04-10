@@ -97,28 +97,14 @@ pub async fn create_video(
     video_url: Json<NewVideoUrl>,
     state: &State<ApiState>,
 ) -> Json<CreateVideoResponse> {
-    // let mut video_id = "".to_string();
-
-    // {
-    //     let dog = "cat".to_string();
-    //     video_id = dog.clone();
-    // }
-
-    // dbg!(&video_id);
-
-    // Json(CreateVideoResponse {
-    //     success: true,
-    //     id: 24,
-    // })
-
     let url = video_url.url.clone();
     let mut video_id = "".to_string();
 
     // Grab the id out of the url string Urls can be in either of the following formats:
-    // (1) https://www.youtube.com/watch?v=TTjYjSEGHek
-    // (2) https://youtu.be/TTjYjSEGHek
+    // (1) https://youtu.be/TTjYjSEGHek
+    // (2) https://www.youtube.com/watch?v=TTjYjSEGHek
     if url.contains("youtu.be") {
-        todo!();
+        video_id = Url::parse(&url).unwrap().path().split_at(1).1.to_string();
     } else {
         let parsed_url = Url::parse(&url).unwrap();
         let qs = parsed_url.query().unwrap();
