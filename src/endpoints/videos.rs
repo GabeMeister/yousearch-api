@@ -1,10 +1,12 @@
-use super::general::ApiState;
+use crate::endpoints::general::{ApiState, SuccessFailResponse};
+use crate::utils::transcriptions::{fetch_transcription, TranscriptionSnippet};
 use chrono::serde::ts_seconds_option;
 use chrono::{DateTime, Utc};
 use querystring::querify;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::State;
+use rocket::{get, post};
 use sqlx::{Error, FromRow};
 use url::Url;
 
@@ -92,11 +94,6 @@ pub struct CreateVideoResponse {
     pub id: i32,
 }
 
-// title | url | thumbnail | youtube_id
-// items[0].snippet.title
-// https://youtube.com/channel/<youtube_id>
-// items[0].snippet.thumbnails.default
-// <youtube_id>
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct YouTubeChannelResponse {
     items: Vec<YouTubeChannelItem>,
@@ -219,4 +216,14 @@ pub async fn create_video(
         success: true,
         id: result.unwrap(),
     })
+}
+
+#[get("/video/<id>/transcript")]
+pub async fn get_transcript(
+    id: String,
+    state: &State<ApiState>,
+) -> Json<Option<Vec<TranscriptionSnippet>>> {
+    let transcription = fetch_transcription(id).await;
+
+    Json(Some(transcription))
 }

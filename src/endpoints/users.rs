@@ -2,8 +2,9 @@ use super::general::ApiState;
 use super::general::SuccessFailResponse;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
-use sqlx::{Error, FromRow};
 use rocket::State;
+use rocket::{get, post};
+use sqlx::{Error, FromRow};
 
 #[derive(Debug, FromRow, Serialize)]
 pub struct User {

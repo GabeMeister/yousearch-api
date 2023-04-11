@@ -1,3 +1,4 @@
+use rocket::get;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
 use sqlx::PgPool;
