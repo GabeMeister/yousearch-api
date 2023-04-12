@@ -1,4 +1,4 @@
-use crate::endpoints::general::{ApiState, SuccessFailResponse};
+use crate::endpoints::general::ApiState;
 use crate::utils::transcriptions::{fetch_transcription, TranscriptionSnippet};
 use chrono::serde::ts_seconds_option;
 use chrono::{DateTime, Utc};

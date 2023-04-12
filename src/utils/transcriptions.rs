@@ -1,4 +1,7 @@
+use html_entities::decode_html_entities;
 use rocket::serde::{Deserialize, Serialize};
+use std::io::BufReader;
+use xml::reader::{EventReader, XmlEvent};
 
 #[derive(Debug, Serialize)]
 pub struct TranscriptionSnippet {
@@ -9,17 +12,27 @@ pub struct TranscriptionSnippet {
 
 #[derive(Debug, Deserialize)]
 pub struct YouTubeHtmlCaptionData {
-    pub playerCaptionsTracklistRenderer: YouTubeCaptionTracks,
+    #[serde(rename = "playerCaptionsTracklistRenderer")]
+    pub player_captions_tracklist_renderer: YouTubeCaptionTracks,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct YouTubeCaptionTracks {
-    pub captionTracks: Vec<YouTubeCaptionTrack>,
+    #[serde(rename = "captionTracks")]
+    pub caption_tracks: Vec<YouTubeCaptionTrack>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct YouTubeCaptionTrack {
-    pub baseUrl: String,
+    #[serde(rename = "baseUrl")]
+    pub base_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaptionTextSnippet {
+    pub text: String,
+    pub start: f32,
+    pub duration: f32,
 }
 
 pub async fn fetch_transcription(video_id: String) -> Vec<TranscriptionSnippet> {
@@ -36,9 +49,71 @@ pub async fn fetch_transcription(video_id: String) -> Vec<TranscriptionSnippet> 
         let transcript_data: YouTubeHtmlCaptionData =
             serde_json::from_str(transcript_json).unwrap();
 
-        dbg!(transcript_data);
+        let transcript_url = transcript_data
+            .player_captions_tracklist_renderer
+            .caption_tracks[1]
+            .base_url
+            .clone();
+
+        let data = reqwest::get(&transcript_url)
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+
+        // dbg!(&data);
+
+        let reader = EventReader::new(BufReader::new(data.as_bytes()));
+
+        let mut captions_list: Vec<CaptionTextSnippet> = vec![];
+        let mut temp_caption = CaptionTextSnippet {
+            text: String::new(),
+            start: 0.0,
+            duration: 0.0,
+        };
+
+        for event in reader {
+            match event {
+                Ok(XmlEvent::StartElement {
+                    name, attributes, ..
+                }) => {
+                    if name.local_name == "text" {
+                        for attr in attributes {
+                            if attr.name.to_string() == "start".to_string() {
+                                temp_caption.start = attr.value.parse::<f32>().unwrap();
+                            } else if attr.name.to_string() == "dur".to_string() {
+                                temp_caption.duration = attr.value.parse::<f32>().unwrap();
+                            }
+                        }
+                    }
+                }
+                Ok(XmlEvent::EndElement { name, .. }) => {
+                    if name.local_name == "text" {
+                        captions_list.push(temp_caption);
+                        temp_caption = CaptionTextSnippet {
+                            text: String::new(),
+                            start: 0.0,
+                            duration: 0.0,
+                        };
+                    }
+                }
+                Ok(XmlEvent::Characters(text)) => {
+                    temp_caption.text = decode_html_entities(&text.replace("\n", ""))
+                        .unwrap()
+                        .to_owned();
+                }
+                Err(e) => {
+                    println!("error: {:?}", e);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        dbg!(captions_list);
     } else {
-        todo!("Havent handled this yet")
+        todo!("Havent handled this yet");
     }
 
     return vec![TranscriptionSnippet {
