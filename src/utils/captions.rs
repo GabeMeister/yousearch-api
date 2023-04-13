@@ -3,13 +3,6 @@ use rocket::serde::{Deserialize, Serialize};
 use std::io::BufReader;
 use xml::reader::{EventReader, XmlEvent};
 
-#[derive(Debug, Serialize)]
-pub struct CaptionSnippet {
-    pub text: String,
-    pub start: i32,
-    pub duration: i32,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct YouTubeHtmlCaptionData {
     #[serde(rename = "playerCaptionsTracklistRenderer")]
@@ -28,16 +21,16 @@ pub struct YouTubeCaptionTrack {
     pub base_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YouTubeCaptionTextSnippet {
     pub text: String,
     pub start: f32,
     pub duration: f32,
 }
 
-pub async fn fetch_captions(video_id: String) -> Vec<CaptionSnippet> {
+pub async fn fetch_captions(video_id: String) -> Vec<YouTubeCaptionTextSnippet> {
+    let mut captions_list: Vec<YouTubeCaptionTextSnippet> = vec![];
     let url = format!("https://www.youtube.com/watch?v={video_id}");
-
     let html = reqwest::get(url).await.unwrap().text().await.unwrap();
 
     let data: Vec<&str> = html.split("\"captions\":").collect();
@@ -66,7 +59,6 @@ pub async fn fetch_captions(video_id: String) -> Vec<CaptionSnippet> {
 
         let reader = EventReader::new(BufReader::new(data.as_bytes()));
 
-        let mut captions_list: Vec<YouTubeCaptionTextSnippet> = vec![];
         let mut temp_caption = YouTubeCaptionTextSnippet {
             text: String::new(),
             start: 0.0,
@@ -110,17 +102,11 @@ pub async fn fetch_captions(video_id: String) -> Vec<CaptionSnippet> {
                 _ => {}
             }
         }
-
-        dbg!(captions_list);
     } else {
         todo!("Havent handled this yet");
     }
 
-    return vec![CaptionSnippet {
-        text: "Welcome to Fleccas Talks, the best new podcast of all time!".to_string(),
-        start: 5,
-        duration: 3,
-    }];
+    return captions_list;
 }
 
 // https://github.com/jdepoix/youtube-transcript-api

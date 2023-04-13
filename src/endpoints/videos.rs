@@ -1,5 +1,5 @@
 use crate::endpoints::general::ApiState;
-use crate::utils::captions::{fetch_captions, CaptionSnippet};
+use crate::utils::captions::{fetch_captions, YouTubeCaptionTextSnippet};
 use chrono::serde::ts_seconds_option;
 use chrono::{DateTime, Utc};
 use querystring::querify;
@@ -16,6 +16,7 @@ pub struct Video {
     pub channel_id: i32,
     pub title: String,
     pub url: String,
+    pub captions: String,
     #[serde(with = "ts_seconds_option")]
     pub upload_datetime: Option<DateTime<Utc>>,
     pub views: i64,
@@ -24,9 +25,11 @@ pub struct Video {
 
 #[get("/video/all")]
 pub async fn get_videos(state: &State<ApiState>) -> Json<Option<Vec<Video>>> {
-    let videos = sqlx::query_as::<_, Video>("select * from videos limit 50;")
-        .fetch_all(&state.pool)
-        .await;
+    let videos = sqlx::query_as::<_, Video>(
+        "select v.*, c.raw_text as captions from videos v join captions c on c.video_id=v.id limit 50;",
+    )
+    .fetch_all(&state.pool)
+    .await;
 
     dbg!(&videos);
 
@@ -132,13 +135,13 @@ pub async fn create_video(
     state: &State<ApiState>,
 ) -> Json<CreateVideoResponse> {
     let url = video_url.url.clone();
-    let mut video_id = "".to_string();
+    let mut youtube_video_id = "".to_string();
 
     // Grab the id out of the url string Urls can be in either of the following formats:
     // (1) https://youtu.be/TTjYjSEGHek
     // (2) https://www.youtube.com/watch?v=TTjYjSEGHek
     if url.contains("youtu.be") {
-        video_id = Url::parse(&url).unwrap().path().split_at(1).1.to_string();
+        youtube_video_id = Url::parse(&url).unwrap().path().split_at(1).1.to_string();
     } else {
         let parsed_url = Url::parse(&url).unwrap();
         let qs = parsed_url.query().unwrap();
@@ -149,10 +152,10 @@ pub async fn create_video(
             .unwrap()
             .1
             .to_string();
-        video_id = temp;
+        youtube_video_id = temp;
     }
 
-    let youtube_api_url = format!("https://www.googleapis.com/youtube/v3/videos?key=AIzaSyAJER_goEuZNztE5XRitR-roJfHvSsUO9Q&part=id,snippet,statistics,contentDetails&id={video_id}");
+    let youtube_api_url = format!("https://www.googleapis.com/youtube/v3/videos?key=AIzaSyAJER_goEuZNztE5XRitR-roJfHvSsUO9Q&part=id,snippet,statistics,contentDetails&id={youtube_video_id}");
     let video = reqwest::get(youtube_api_url)
         .await
         .unwrap()
@@ -212,6 +215,19 @@ pub async fn create_video(
             .fetch_one(&state.pool)
             .await;
 
+    let video_id = result.unwrap();
+    let video_captions = fetch_captions(youtube_video_id.clone()).await;
+    let raw_text = video_captions
+        .iter()
+        .fold(String::new(), |acc, s| acc + &s.text + " ");
+    let result: Result<i32, Error> =
+        sqlx::query_scalar("insert into captions (video_id, raw_text, caption_timestamps) values ($1, $2, $3) returning id")
+            .bind(video_id)
+            .bind(raw_text)
+            .bind(sqlx::types::Json(&video_captions))
+            .fetch_one(&state.pool)
+            .await;
+
     Json(CreateVideoResponse {
         success: true,
         id: result.unwrap(),
@@ -222,7 +238,7 @@ pub async fn create_video(
 pub async fn get_transcript(
     id: String,
     state: &State<ApiState>,
-) -> Json<Option<Vec<CaptionSnippet>>> {
+) -> Json<Option<Vec<YouTubeCaptionTextSnippet>>> {
     let transcription = fetch_captions(id).await;
 
     Json(Some(transcription))
