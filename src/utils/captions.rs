@@ -42,9 +42,17 @@ pub async fn fetch_captions(video_id: String) -> Vec<YouTubeCaptionTextSnippet> 
         let transcript_data: YouTubeHtmlCaptionData =
             serde_json::from_str(transcript_json).unwrap();
 
+        // Sometimes there's two caption tracks, sometimes there's 1. We just
+        // grab the last one cause that one seems to work.
+        let transcript_idx = transcript_data
+            .player_captions_tracklist_renderer
+            .caption_tracks
+            .len()
+            - 1;
+
         let transcript_url = transcript_data
             .player_captions_tracklist_renderer
-            .caption_tracks[1]
+            .caption_tracks[transcript_idx]
             .base_url
             .clone();
 

@@ -26,7 +26,7 @@ pub struct Video {
 #[get("/video/all")]
 pub async fn get_videos(state: &State<ApiState>) -> Json<Option<Vec<Video>>> {
     let videos = sqlx::query_as::<_, Video>(
-        "select v.*, c.raw_text as captions from videos v join captions c on c.video_id=v.id limit 50;",
+        "select v.*, LEFT(c.raw_text, 400) as captions from videos v join captions c on c.video_id=v.id limit 50;",
     )
     .fetch_all(&state.pool)
     .await;
