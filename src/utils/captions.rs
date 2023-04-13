@@ -4,7 +4,7 @@ use std::io::BufReader;
 use xml::reader::{EventReader, XmlEvent};
 
 #[derive(Debug, Serialize)]
-pub struct TranscriptionSnippet {
+pub struct CaptionSnippet {
     pub text: String,
     pub start: i32,
     pub duration: i32,
@@ -29,13 +29,13 @@ pub struct YouTubeCaptionTrack {
 }
 
 #[derive(Debug, Clone)]
-pub struct CaptionTextSnippet {
+pub struct YouTubeCaptionTextSnippet {
     pub text: String,
     pub start: f32,
     pub duration: f32,
 }
 
-pub async fn fetch_transcription(video_id: String) -> Vec<TranscriptionSnippet> {
+pub async fn fetch_captions(video_id: String) -> Vec<CaptionSnippet> {
     let url = format!("https://www.youtube.com/watch?v={video_id}");
 
     let html = reqwest::get(url).await.unwrap().text().await.unwrap();
@@ -66,8 +66,8 @@ pub async fn fetch_transcription(video_id: String) -> Vec<TranscriptionSnippet> 
 
         let reader = EventReader::new(BufReader::new(data.as_bytes()));
 
-        let mut captions_list: Vec<CaptionTextSnippet> = vec![];
-        let mut temp_caption = CaptionTextSnippet {
+        let mut captions_list: Vec<YouTubeCaptionTextSnippet> = vec![];
+        let mut temp_caption = YouTubeCaptionTextSnippet {
             text: String::new(),
             start: 0.0,
             duration: 0.0,
@@ -91,7 +91,7 @@ pub async fn fetch_transcription(video_id: String) -> Vec<TranscriptionSnippet> 
                 Ok(XmlEvent::EndElement { name, .. }) => {
                     if name.local_name == "text" {
                         captions_list.push(temp_caption);
-                        temp_caption = CaptionTextSnippet {
+                        temp_caption = YouTubeCaptionTextSnippet {
                             text: String::new(),
                             start: 0.0,
                             duration: 0.0,
@@ -116,7 +116,7 @@ pub async fn fetch_transcription(video_id: String) -> Vec<TranscriptionSnippet> 
         todo!("Havent handled this yet");
     }
 
-    return vec![TranscriptionSnippet {
+    return vec![CaptionSnippet {
         text: "Welcome to Fleccas Talks, the best new podcast of all time!".to_string(),
         start: 5,
         duration: 3,

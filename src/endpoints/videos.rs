@@ -1,5 +1,5 @@
 use crate::endpoints::general::ApiState;
-use crate::utils::transcriptions::{fetch_transcription, TranscriptionSnippet};
+use crate::utils::captions::{fetch_captions, CaptionSnippet};
 use chrono::serde::ts_seconds_option;
 use chrono::{DateTime, Utc};
 use querystring::querify;
@@ -222,8 +222,8 @@ pub async fn create_video(
 pub async fn get_transcript(
     id: String,
     state: &State<ApiState>,
-) -> Json<Option<Vec<TranscriptionSnippet>>> {
-    let transcription = fetch_transcription(id).await;
+) -> Json<Option<Vec<CaptionSnippet>>> {
+    let transcription = fetch_captions(id).await;
 
     Json(Some(transcription))
 }
