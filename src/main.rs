@@ -38,7 +38,7 @@ async fn rocket() -> _ {
                 endpoints::users::delete_user,
                 endpoints::videos::get_videos,
                 endpoints::videos::create_video,
-                endpoints::videos::get_transcript,
+                endpoints::videos::search_video_captions,
             ],
         )
 }

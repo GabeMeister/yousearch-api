@@ -3,6 +3,7 @@ use crate::utils::captions::{fetch_captions, YouTubeCaptionTextSnippet};
 use chrono::serde::ts_seconds_option;
 use chrono::{DateTime, Utc};
 use querystring::querify;
+use rocket::http::RawStr;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::State;
@@ -26,7 +27,7 @@ pub struct Video {
 #[get("/video/all")]
 pub async fn get_videos(state: &State<ApiState>) -> Json<Option<Vec<Video>>> {
     let videos = sqlx::query_as::<_, Video>(
-        "select v.*, LEFT(c.raw_text, 400) as captions from videos v join captions c on c.video_id=v.id limit 50;",
+        "select v.*, LEFT(c.raw_text, 40000000) as captions from videos v join captions c on c.video_id=v.id limit 50;",
     )
     .fetch_all(&state.pool)
     .await;
@@ -202,7 +203,7 @@ pub async fn create_video(
     }
 
     let result: Result<i32, Error> =
-        sqlx::query_scalar("insert into videos (channel_id, title, url, upload_datetime, views, length, thumbnail) values ($1, $2, $3, $4, $5, $6, $7) returning id")
+        sqlx::query_scalar("insert into videos (channel_id, title, url, upload_datetime, views, length, thumbnail, youtube_id) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id")
             .bind(channel_id)
             .bind(video_to_insert.snippet.title)
             .bind(video_url.url.clone())
@@ -212,6 +213,7 @@ pub async fn create_video(
             .bind(30)
             // .bind(video_to_insert.content_details.duration)
             .bind(video_to_insert.snippet.thumbnails.default.url)
+            .bind(youtube_video_id.clone())
             .fetch_one(&state.pool)
             .await;
 
@@ -220,26 +222,60 @@ pub async fn create_video(
     let raw_text = video_captions
         .iter()
         .fold(String::new(), |acc, s| acc + &s.text + " ");
-    let result: Result<i32, Error> =
-        sqlx::query_scalar("insert into captions (video_id, raw_text, caption_timestamps) values ($1, $2, $3) returning id")
-            .bind(video_id)
-            .bind(raw_text)
-            .bind(sqlx::types::Json(&video_captions))
-            .fetch_one(&state.pool)
-            .await;
+    let caption_id_result: Result<i32, Error> = sqlx::query_scalar(
+        "insert into captions (video_id, raw_text, caption_json) values ($1, $2, $3) returning id",
+    )
+    .bind(video_id)
+    .bind(raw_text)
+    .bind(sqlx::types::Json(&video_captions))
+    .fetch_one(&state.pool)
+    .await;
+
+    dbg!(&video_captions);
+
+    let caption_id = caption_id_result.unwrap();
+    dbg!(caption_id);
+
+    for caption_data in video_captions {
+        let caption_timestamp_result: Result<i32, Error> = sqlx::query_scalar(
+            "insert into caption_timestamps (video_id, caption_id, caption_text, start, duration) values ($1, $2, $3, $4, $5) returning id",
+        )
+        .bind(video_id)
+        .bind(caption_id)
+        .bind(caption_data.text.clone())
+        .bind(caption_data.start)
+        .bind(caption_data.duration)
+        .fetch_one(&state.pool)
+        .await;
+
+        dbg!(caption_timestamp_result.unwrap());
+    }
 
     Json(CreateVideoResponse {
         success: true,
-        id: result.unwrap(),
+        id: video_id,
     })
 }
 
-#[get("/video/<id>/transcript")]
-pub async fn get_transcript(
-    id: String,
-    state: &State<ApiState>,
-) -> Json<Option<Vec<YouTubeCaptionTextSnippet>>> {
-    let transcription = fetch_captions(id).await;
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct CaptionTextSnippet {
+    pub title: String,
+    pub url: String,
+    pub caption_text: String,
+}
 
-    Json(Some(transcription))
+#[get("/video/caption/search?<name>")]
+pub async fn search_video_captions(
+    name: &str,
+    state: &State<ApiState>,
+) -> Json<Option<Vec<CaptionTextSnippet>>> {
+    let rows = sqlx::query_as::<_, CaptionTextSnippet>("select v.title, CONCAT('https://youtu.be/', v.youtube_id, '?t=', ct.start::integer) as url, ct.caption_text
+        from caption_timestamps  ct
+        join videos v on v.id = ct.video_id
+        where to_tsvector('english', caption_text) @@ to_tsquery('english', $1)")
+        .bind(name)
+        .fetch_all(&state.pool)
+        .await;
+
+    Json(Some(rows.unwrap()))
 }
