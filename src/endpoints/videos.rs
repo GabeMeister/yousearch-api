@@ -15,6 +15,7 @@ use url::Url;
 pub struct Video {
     pub id: i32,
     pub channel_id: i32,
+    pub channel_title: String,
     pub title: String,
     pub url: String,
     pub captions: String,
@@ -22,12 +23,17 @@ pub struct Video {
     pub upload_datetime: Option<DateTime<Utc>>,
     pub views: i64,
     pub length: i32,
+    pub thumbnail: String,
+    pub youtube_id: String,
 }
 
 #[get("/video/all")]
 pub async fn get_videos(state: &State<ApiState>) -> Json<Option<Vec<Video>>> {
     let videos = sqlx::query_as::<_, Video>(
-        "select v.*, LEFT(c.raw_text, 40000000) as captions from videos v join captions c on c.video_id=v.id limit 50;",
+        "select v.id, v.channel_id, ch.title as channel_title, v.title, v.url, LEFT(ca.raw_text, 400) as captions, v.upload_datetime, v.views, v.length, v.thumbnail, v.youtube_id from videos v
+        join captions ca on ca.video_id=v.id
+        join channels ch on ch.id=v.channel_id
+        limit 50",
     )
     .fetch_all(&state.pool)
     .await;
@@ -260,22 +266,36 @@ pub async fn create_video(
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct CaptionTextSnippet {
     pub title: String,
+    pub thumbnail: String,
+    pub channel_title: String,
     pub url: String,
     pub caption_text: String,
+    pub start: f64,
 }
 
-#[get("/video/caption/search?<name>")]
+#[get("/video/caption/search?<text>")]
 pub async fn search_video_captions(
-    name: &str,
+    text: &str,
     state: &State<ApiState>,
 ) -> Json<Option<Vec<CaptionTextSnippet>>> {
-    let rows = sqlx::query_as::<_, CaptionTextSnippet>("select v.title, CONCAT('https://youtu.be/', v.youtube_id, '?t=', ct.start::integer) as url, ct.caption_text
-        from caption_timestamps  ct
+    let rows = sqlx::query_as::<_, CaptionTextSnippet>(
+        "
+        select
+            v.title,
+            v.thumbnail,
+            ch.title as channel_title,
+            CONCAT('https://youtu.be/', v.youtube_id, '?t=', ct.start::integer) as url,
+            ct.caption_text,
+            ct.start
+        from caption_timestamps ct
         join videos v on v.id = ct.video_id
-        where to_tsvector('english', caption_text) @@ to_tsquery('english', $1)")
-        .bind(name)
-        .fetch_all(&state.pool)
-        .await;
+        join channels ch on ch.id=v.channel_id
+        where to_tsvector('english', caption_text) @@ to_tsquery('english', $1)
+        order by v.upload_datetime desc, ct.start",
+    )
+    .bind(text)
+    .fetch_all(&state.pool)
+    .await;
 
     Json(Some(rows.unwrap()))
 }
