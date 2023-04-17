@@ -1,15 +1,16 @@
 use crate::endpoints::general::ApiState;
-use crate::utils::captions::{fetch_captions, YouTubeCaptionTextSnippet};
+use crate::utils::captions::fetch_captions;
 use chrono::serde::ts_seconds_option;
 use chrono::{DateTime, Utc};
 use querystring::querify;
-use rocket::http::RawStr;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::State;
 use rocket::{get, post};
 use sqlx::{Error, FromRow};
 use url::Url;
+
+use super::general::SuccessFailResponse;
 
 #[derive(Debug, FromRow, Serialize)]
 pub struct Video {
@@ -142,7 +143,7 @@ pub async fn create_video(
     state: &State<ApiState>,
 ) -> Json<CreateVideoResponse> {
     let url = video_url.url.clone();
-    let mut youtube_video_id = "".to_string();
+    let youtube_video_id: String;
 
     // Grab the id out of the url string Urls can be in either of the following formats:
     // (1) https://youtu.be/TTjYjSEGHek
@@ -242,20 +243,36 @@ pub async fn create_video(
     let caption_id = caption_id_result.unwrap();
     dbg!(caption_id);
 
-    for caption_data in video_captions {
-        let caption_timestamp_result: Result<i32, Error> = sqlx::query_scalar(
-            "insert into caption_timestamps (video_id, caption_id, caption_text, start, duration) values ($1, $2, $3, $4, $5) returning id",
-        )
-        .bind(video_id)
-        .bind(caption_id)
-        .bind(caption_data.text.clone())
-        .bind(caption_data.start)
-        .bind(caption_data.duration)
+    let video_ids = video_captions
+        .iter()
+        .map(|_c| video_id)
+        .collect::<Vec<i32>>();
+    let caption_ids = video_captions
+        .iter()
+        .map(|_c| caption_id)
+        .collect::<Vec<i32>>();
+    let caption_texts = video_captions
+        .iter()
+        .map(|c| c.text.clone())
+        .collect::<Vec<String>>();
+    let caption_starts = video_captions.iter().map(|c| c.start).collect::<Vec<f32>>();
+    let caption_durations = video_captions
+        .iter()
+        .map(|c| c.duration)
+        .collect::<Vec<f32>>();
+
+    let caption_timestamp_result: Result<i32, Error> = sqlx::query_scalar(
+        "insert into caption_timestamps (video_id, caption_id, caption_text, start, duration) select * from unnest($1, $2, $3, $4, $5) returning id",
+    )
+        .bind(video_ids)
+        .bind(caption_ids)
+        .bind(caption_texts)
+        .bind(caption_starts)
+        .bind(caption_durations)
         .fetch_one(&state.pool)
         .await;
 
-        dbg!(caption_timestamp_result.unwrap());
-    }
+    dbg!(caption_timestamp_result.unwrap());
 
     Json(CreateVideoResponse {
         success: true,
@@ -298,4 +315,18 @@ pub async fn search_video_captions(
     .await;
 
     Json(Some(rows.unwrap()))
+}
+
+#[get("/video/test")]
+pub async fn test_video(_state: &State<ApiState>) -> Json<SuccessFailResponse> {
+    // let caption_id_result: Result<i32, Error> = sqlx::query_scalar(
+    //     "insert into captions (video_id, raw_text, caption_json) values ($1, $2, $3) returning id",
+    // )
+    // .bind(video_id)
+    // .bind(raw_text)
+    // .bind(sqlx::types::Json(&video_captions))
+    // .fetch_one(&state.pool)
+    // .await;
+
+    Json(SuccessFailResponse { success: true })
 }

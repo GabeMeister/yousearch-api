@@ -39,6 +39,7 @@ async fn rocket() -> _ {
                 endpoints::videos::get_videos,
                 endpoints::videos::create_video,
                 endpoints::videos::search_video_captions,
+                endpoints::videos::test_video,
             ],
         )
 }
