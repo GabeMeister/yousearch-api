@@ -295,6 +295,11 @@ pub async fn search_video_captions(
     text: &str,
     state: &State<ApiState>,
 ) -> Json<Option<Vec<CaptionTextSnippet>>> {
+    // If the user searches for text with spaces in it, such as "tennis match",
+    // then we want to find any row that contains the text "tennis" or "match".
+    // To do this we put a `&` character inbetween every word.
+    let search_text = text.replace(" ", " & ");
+
     let rows = sqlx::query_as::<_, CaptionTextSnippet>(
         "
         select
@@ -310,7 +315,7 @@ pub async fn search_video_captions(
         where to_tsvector('english', caption_text) @@ to_tsquery('english', $1)
         order by v.upload_datetime desc, ct.start",
     )
-    .bind(text)
+    .bind(search_text)
     .fetch_all(&state.pool)
     .await;
 
