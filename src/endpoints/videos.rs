@@ -306,7 +306,7 @@ pub async fn search_video_captions(
             v.title,
             v.thumbnail,
             ch.title as channel_title,
-            CONCAT('https://youtu.be/', v.youtube_id, '?t=', ct.start::integer) as url,
+            CONCAT('https://www.youtube.com/watch?v=', v.youtube_id, '&t=', GREATEST(ct.start::integer - 2, 0), 's') as url,
             ct.caption_text,
             ct.start
         from caption_timestamps ct
