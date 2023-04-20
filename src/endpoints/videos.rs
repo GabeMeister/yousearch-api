@@ -12,7 +12,7 @@ use url::Url;
 
 use super::general::SuccessFailResponse;
 
-#[derive(Debug, FromRow, Serialize)]
+#[derive(Debug, Clone, Deserialize, FromRow, Serialize)]
 pub struct Video {
     pub id: i32,
     pub channel_id: i32,
@@ -282,29 +282,52 @@ pub async fn create_video(
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct CaptionTextSnippet {
-    pub title: String,
-    pub thumbnail: String,
-    pub channel_title: String,
     pub url: String,
     pub caption_text: String,
     pub start: f64,
+}
+
+// A struct for "bucketing" together caption snippets into the same video
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct CaptionSearchResults {
+    pub success: bool,
+    pub videos: Vec<VideoCaptionsResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct VideoCaptionsResult {
+    pub video: Video,
+    pub captions: Vec<CaptionTextSnippet>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct VideoCaptionBuckets {
+    pub video: Video,
+    pub captions: Vec<CaptionTextSnippet>,
 }
 
 #[get("/video/caption/search?<text>")]
 pub async fn search_video_captions(
     text: &str,
     state: &State<ApiState>,
-) -> Json<Option<Vec<CaptionTextSnippet>>> {
+) -> Json<Option<CaptionSearchResults>> {
     // If the user searches for text with spaces in it, such as "tennis match",
-    // then we want to find any row that contains the text "tennis" or "match".
+    // then we want to find any row that contains the text "tennis" AND "match".
     // To do this we put a `&` character inbetween every word.
     let search_text = text.replace(" ", " & ");
 
-    let rows = sqlx::query_as::<_, CaptionTextSnippet>(
+    let rows = sqlx::query!(
         "
         select
+            v.id,
+            v.channel_id,
             v.title,
+            v.upload_datetime,
+            v.views,
+            v.length,
             v.thumbnail,
+            v.youtube_id,
+            CONCAT('https://www.youtube.com/watch?v=', v.youtube_id) as base_url,
             ch.title as channel_title,
             CONCAT('https://www.youtube.com/watch?v=', v.youtube_id, '&t=', GREATEST(ct.start::integer - 2, 0), 's') as url,
             ct.caption_text,
@@ -314,12 +337,65 @@ pub async fn search_video_captions(
         join channels ch on ch.id=v.channel_id
         where to_tsvector('english', caption_text) @@ to_tsquery('english', $1)
         order by v.upload_datetime desc, ct.start",
+        search_text,
     )
-    .bind(search_text)
     .fetch_all(&state.pool)
-    .await;
+    .await
+    .unwrap();
 
-    Json(Some(rows.unwrap()))
+    let mut videos: Vec<VideoCaptionsResult> = vec![];
+    let mut temp_video: Video = Video {
+        id: 0,
+        channel_id: 0,
+        channel_title: String::new(),
+        title: String::new(),
+        url: String::new(),
+        captions: String::new(),
+        upload_datetime: None,
+        views: 0,
+        length: 0,
+        thumbnail: String::new(),
+        youtube_id: String::new(),
+    };
+
+    for row in rows {
+        // Each row effectively stores all the data for each video already, so
+        // we just create the video once
+        if temp_video.id != row.id {
+            temp_video = Video {
+                id: row.id,
+                channel_id: row.channel_id,
+                channel_title: row.channel_title,
+                title: row.title,
+                url: row.base_url.unwrap(),
+                captions: String::new(),
+                upload_datetime: Some(row.upload_datetime),
+                views: row.views,
+                length: row.length,
+                thumbnail: row.thumbnail,
+                youtube_id: row.youtube_id,
+            };
+
+            let temp_captions: Vec<CaptionTextSnippet> = vec![];
+
+            videos.push(VideoCaptionsResult {
+                video: temp_video.clone(),
+                captions: temp_captions,
+            });
+        }
+
+        let temp_caption = CaptionTextSnippet {
+            url: row.url.unwrap(),
+            caption_text: row.caption_text,
+            start: row.start,
+        };
+        videos.last_mut().unwrap().captions.push(temp_caption);
+    }
+
+    Json(Some(CaptionSearchResults {
+        success: true,
+        videos,
+    }))
 }
 
 #[get("/video/test")]
