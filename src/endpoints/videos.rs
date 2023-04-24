@@ -1,3 +1,5 @@
+use std::env;
+
 use crate::endpoints::general::ApiState;
 use crate::utils::captions::fetch_captions;
 use chrono::serde::ts_seconds_option;
@@ -163,7 +165,10 @@ pub async fn create_video(
         youtube_video_id = temp;
     }
 
-    let youtube_api_url = format!("https://www.googleapis.com/youtube/v3/videos?key=AIzaSyAJER_goEuZNztE5XRitR-roJfHvSsUO9Q&part=id,snippet,statistics,contentDetails&id={youtube_video_id}");
+    let youtube_api_key =
+        env::var("YOUTUBE_API_KEY").expect("Could not find YOUTUBE_API_KEY environment variable");
+
+    let youtube_api_url = format!("https://www.googleapis.com/youtube/v3/videos?key={youtube_api_key}&part=id,snippet,statistics,contentDetails&id={youtube_video_id}");
     let video = reqwest::get(youtube_api_url)
         .await
         .unwrap()
@@ -181,10 +186,12 @@ pub async fn create_video(
         .await;
 
     let mut channel_id: i32 = -1;
+    let youtube_api_key =
+        env::var("YOUTUBE_API_KEY").expect("Could not find YOUTUBE_API_KEY environment variable");
 
     if let Err(_) = row {
         // Fetch the channel details, and insert them into the channels table
-        let youtube_api_channel_url = format!("https://www.googleapis.com/youtube/v3/channels?key=AIzaSyAJER_goEuZNztE5XRitR-roJfHvSsUO9Q&part=id,snippet,statistics,contentDetails&id={channel_youtube_id}");
+        let youtube_api_channel_url = format!("https://www.googleapis.com/youtube/v3/channels?key={youtube_api_key}&part=id,snippet,statistics,contentDetails&id={channel_youtube_id}");
         let channel = reqwest::get(&youtube_api_channel_url)
             .await
             .unwrap()
